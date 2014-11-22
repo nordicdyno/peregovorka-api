@@ -249,8 +249,8 @@ func checkAndGetUser(req *http.Request) (string, error) {
 
 	notFound := true
 	var it *memcache.Item
-	for _, client := range globals.MemClients {
-		log.Println("client", spew.Sdump(client), "get", key)
+	for i, client := range globals.MemClients {
+		log.Println("client", string(i), "get", key)
 		it, err = client.Get(key)
 		if err != nil {
 			if err == memcache.ErrCacheMiss {
