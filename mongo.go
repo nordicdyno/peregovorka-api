@@ -61,16 +61,16 @@ func mongoSendMessage(roomid string, message *Message) error {
 		return err
 	}
 
-	log.Println("Found", spew.Sdump(baseRoom))
+	log.Println("mongoSendMessage: found room", spew.Sdump(baseRoom))
 
 	// allRoomIds: owner Id -> other users []Id map
 	allRoomIds := make(map[string][]string)
 
-	baseGuests := make([]string, 0, len(baseRoom.Guests))
+	baseGuestsIds := make([]string, 0, len(baseRoom.Guests))
 	for k := range baseRoom.Guests {
-		baseGuests = append(baseGuests, k)
+		baseGuestsIds = append(baseGuestsIds, k)
 	}
-	allRoomIds[roomid] = baseGuests
+	allRoomIds[baseRoom.OwnerId] = baseGuestsIds
 
 	for guestId := range baseRoom.Guests {
 		keys := []string{baseRoom.OwnerId}
@@ -195,7 +195,7 @@ func mongoAddMessageToHouseRoom(uid string, roomid string, message *Message) err
 	msgUpdateBson := bson.M{
 		"$set": bson.M{
 			"uid":             uid,
-			"rooms." + roomid: bson.M{"last_message": message},
+			"rooms." + roomid + ".last_message": message,
 		},
 	}
 	log.Println("add message data to house: ", spew.Sdump(msgUpdateBson))
