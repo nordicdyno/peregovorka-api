@@ -2,94 +2,309 @@ package main
 
 import (
 	"encoding/json"
-	mgo "gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"errors"
+	"io"
 	"log"
 	"net/http"
+	"runtime/debug"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
+	mgo "gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
+
+	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
-const (
-	dbName = "chat"
+var (
+	ErrNotFound = errors.New("handlers: data not found")
 )
 
-var mongoDBDialInfo = mgo.DialInfo{
-	Addrs:    []string{"ds047720.mongolab.com:47720"},
-	Timeout:  60 * time.Second,
-	Database: dbName,
-	Username: "sports",
-	Password: "hackochat",
+func historyRoomsHandler(w http.ResponseWriter, req *http.Request) {
+	log.Println("call historyRoomsHandler")
+	uid, err := checkAndGetUser(req)
+	if err != nil {
+		if err == mgo.ErrNotFound {
+			http.NotFound(w, req)
+			// io.WriteString(w, "{}") // 404 ?
+			return
+		}
+		panic(err)
+	}
+	_ = uid
 }
 
-type UserList []*UserData
-
-type UserData struct {
-	Uid       string    `json:"uid"`
-	LastLogin time.Time `bson:"last_login_dt" json:"last_login_dt"`
-	Online    bool      `json:"online"`
-	Name      string    `json:"name"`
-	AvatarUrl string    `bson:"avatar_url" json:"avatar_url"`
-}
-
-func addUserHandler(w http.ResponseWriter, req *http.Request) {
-	log.Println("call addUserHandler")
-	uid := req.PostFormValue("uid")
-	name := req.PostFormValue("name")
-	avatar_url := req.PostFormValue("avatar_url")
-
-	user := UserData{
-		Uid:       uid,
-		Online:    true,
-		Name:      name,
-		AvatarUrl: avatar_url,
+func sendRoomHandler(w http.ResponseWriter, req *http.Request) {
+	var (
+		uid string
+		err error
+	)
+	log.Println("call sendRoomHandler")
+	uid, err = checkAndGetUser(req)
+	if err != nil {
+		if err == mgo.ErrNotFound {
+			http.NotFound(w, req)
+			return
+		}
+		panic(err)
 	}
 
-	selector := bson.M{"uid": user.Uid}
-	data := bson.M{"$set": &user}
-	res, err := upsertMongo(selector, data)
+	roomid := req.PostFormValue("roomid")
+	content := req.PostFormValue("content")
+
+	message := Message{
+		Dt:       time.Now(),
+		Content:  content,
+		AuthorId: uid,
+		Readed:   false,
+	}
+
+	err = mongoSendMessage(roomid, &message)
 	if err != nil {
 		panic(err)
 	}
 
-	log.Println("result:", spew.Sdump(res))
+	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	io.WriteString(w, "{}")
 }
 
+func listRoomsHandler(w http.ResponseWriter, req *http.Request) {
+	log.Println("call listRoomsHandler")
+	uid := req.PostFormValue("uid")
+
+	//type Rooms []*RoomDataDesc
+	//list := make([]*RoomDataDesc, 100)
+	house := HouseData{
+		Rooms: make(map[string]*RoomDataDesc),
+	}
+	selector := bson.M{"uid": uid}
+	log.Println("selector: ", selector)
+	//err := queryMongoCollectionOne("house", selector, &house)
+	err := queryMongoCollectionOne("houses", selector, &house)
+	if err != nil {
+		if err == mgo.ErrNotFound {
+			log.Println("Not found house for uid=", uid)
+			w.Header().Set("Content-Type", "application/json;charset=utf-8")
+			io.WriteString(w, "{}") // 404 ?
+			return
+		}
+		panic(err.Error() + ": " + string(debug.Stack()))
+	}
+	log.Println("go house: ", spew.Sdump(&house))
+
+	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	jEnc := json.NewEncoder(w)
+	jEnc.Encode(&house)
+}
+
+// createRoomHandler create room for current user id to specified user id (guidPOST param)
+func createRoomHandler(w http.ResponseWriter, req *http.Request) {
+	log.Println("call createRoomHandler")
+	uid, err := checkAndGetUser(req)
+	if err != nil {
+		if err == mgo.ErrNotFound {
+			http.NotFound(w, req)
+			// io.WriteString(w, "{}") // 404 ?
+			return
+		}
+		panic(err)
+	}
+
+	guid := req.PostFormValue("guid")
+	if uid == guid {
+		panic("Ids can't match")
+	}
+	// FIXME: check if guid exists
+
+	guestIds := []string{guid}
+
+	roomid, err := mongoCreateRoom(uid, guestIds)
+	if err != nil {
+		panic(err)
+	}
+
+	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	io.WriteString(w, "{\"roomid\": \""+roomid+"\"}")
+}
+
+// registerUserHandler user register or update data in chat
+func registerUserHandler(w http.ResponseWriter, req *http.Request) {
+	id_str, err := checkAndGetUser(req)
+	if err != nil {
+		if err == ErrNotFound {
+			http.NotFound(w, req)
+			return
+		}
+		panic(err)
+	}
+
+	id, err := strconv.Atoi(id_str)
+	if err != nil {
+		panic("can't convert " + id_str + err.Error())
+	}
+
+	// TODO: move to function
+	log.Println("before query")
+	var rows *sqlx.Rows
+	rows, err = globals.DbLink.Queryx(
+		`SELECT status, name, nick, rate_status_id, media FROM sport_users WHERE id = $1`,
+		id,
+	)
+	// _ = rows
+	if err, ok := err.(*pq.Error); ok {
+		log.Panic("pq error: ", err.Code.Name(), " >>> ", err.Error())
+	}
+	defer rows.Close()
+	log.Println("after query")
+
+	userDb := UserDbInfo{}
+	for rows.Next() {
+		err := rows.StructScan(&userDb)
+		if err != nil {
+			log.Panic(err)
+		}
+		log.Println(spew.Sdump(userDb))
+		break
+	}
+	err = rows.Err()
+	if err != nil {
+		log.Panic(err)
+	}
+
+	user := UserData{
+		Uid:       id_str,
+		LastLogin: time.Now(),
+		Online:    true,
+		Name:      userDb.Name,
+		AvatarUrl: userDb.Media.AvatarLink,
+	}
+	err = mongoAddUser(&user)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// listUsersHandler chat users list
 func listUsersHandler(w http.ResponseWriter, req *http.Request) {
 	log.Println("call listUsersHandler")
 	list := make(UserList, 100)
-	err := queryMongoAll(nil, &list)
+	err := queryMongoCollectionAll("users", nil, &list)
 	if err != nil {
 		panic(err)
 	}
-	log.Println(spew.Sdump(&list))
+	//log.Println(spew.Sdump(&list))
 
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
 	jEnc := json.NewEncoder(w)
 	jEnc.Encode(&list)
 }
 
-func queryMongoAll(query interface{}, result interface{}) error {
-	session, err := mgo.DialWithInfo(&mongoDBDialInfo)
+// checkAndGetUser helper function for cookie check in memcache
+func checkAndGetUser(req *http.Request) (string, error) {
+	sidCookie, err := req.Cookie("sid")
 	if err != nil {
-		return err
+		log.Println("auth cookie not set:", err)
+		return "", ErrNotFound
 	}
-	defer session.Close()
 
-	session.SetMode(mgo.Monotonic, true)
-	collection := session.DB(dbName).C("users")
-	return collection.Find(query).All(result)
+	log.Println("sidCookie:", spew.Sdump(sidCookie))
+	sid := sidCookie.Value
+
+	log.Println("sid is: ", sid)
+
+	// TODO: move to func
+	key := "x|session_" + sid
+	it, err := globals.MemClient.Get(key)
+	if err != nil {
+		if err == memcache.ErrCacheMiss {
+			log.Println("user session not found for id =", sid)
+			return "", ErrNotFound
+		}
+		// check other errors
+		return "", err
+	}
+
+	var id_str string
+	data := string(it.Value)
+	for _, val := range strings.Split(data, "\n") {
+		pair := strings.Split(val, "\t")
+		if pair[0] == "user_id" {
+			id_str = pair[1]
+			break
+		}
+	}
+	return id_str, nil
 }
 
-func upsertMongo(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error) {
-	session, err := mgo.DialWithInfo(&mongoDBDialInfo)
-	if err != nil {
-		return nil, err
-	}
-	defer session.Close()
+// Debug handlers
 
-	session.SetMode(mgo.Monotonic, true)
-	collection := session.DB(dbName).C("users")
-	return collection.Upsert(selector, update)
+func createUserHandlerDebug(w http.ResponseWriter, req *http.Request) {
+	log.Println("call createUserHandler")
+	uid := req.PostFormValue("uid")
+	name := req.PostFormValue("name")
+	avatar_url := req.PostFormValue("avatar_url")
+
+	user := UserData{
+		Uid:       uid,
+		LastLogin: time.Now(),
+		Online:    true,
+		Name:      name,
+		AvatarUrl: avatar_url,
+	}
+	err := mongoAddUser(&user)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func createRoomHandlerDebug(w http.ResponseWriter, req *http.Request) {
+	log.Println("call createRoomHandlerDebug")
+	uid := req.PostFormValue("uid")
+	guid := req.PostFormValue("guid")
+	if uid == guid {
+		panic("Ids can't match")
+	}
+
+	guestIds := []string{guid}
+	var id string
+	id = makeRoomId(uid, guestIds, shaLength)
+
+	roomBson := bson.M{
+		"id":      id,
+		"ownerid": uid,
+		"guests":  guestIds,
+	}
+	selector := bson.M{"id": id}
+	log.Println("rooms selector: ", selector)
+	log.Println("rooms update: ", roomBson)
+
+	res, err := upsertMongoCollection("rooms", selector, roomBson)
+	if err != nil {
+		panic(err)
+	}
+	//_ = res
+	log.Println("rooms result:", spew.Sdump(res))
+
+	houseSelector := bson.M{
+		"uid": uid,
+	}
+	roomSubKey := "rooms." + id
+	houseBson := bson.M{
+		"$set": bson.M{
+			roomSubKey: roomBson,
+		},
+	}
+
+	log.Println("houses selector: ", houseSelector)
+	log.Println("houses update: ", houseBson)
+
+	res, err = upsertMongoCollection("houses", houseSelector, houseBson)
+	if err != nil {
+		panic(err)
+	}
+	log.Println("houses result:", spew.Sdump(res))
 }
