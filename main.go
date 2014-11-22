@@ -73,15 +73,18 @@ type MongoConfig struct {
 
 var conf = Config{
 	Db:       &DbConfig{},
-	Memcache: &MemcacheConfig{},
 	Mongo:    &MongoConfig{},
+	Memcache: &MemcacheConfig{},
 }
 
 type Globals struct {
 	MongoDialInfo *mgo.DialInfo
-	MemClient     *memcache.Client
 	DbLink *sqlx.DB
 	DbConfString string
+	// XXX: temporary hack
+	MemClients  []*memcache.Client
+	// TODO: fixme
+	//MemClient     *memcache.Client
 }
 
 var globals = Globals{
@@ -106,7 +109,14 @@ func init() {
 		Username: conf.Mongo.Username,
 		Password: conf.Mongo.Password,
 	}
-	globals.MemClient = memcache.New(conf.Memcache.Servers...)
+	// globals.MemClient = memcache.New(conf.Memcache.Servers...)
+	globals.MemClients = make([]*memcache.Client, len(conf.Memcache.Servers))
+	for i, serv := range conf.Memcache.Servers {
+		log.Println("create client on server", serv)
+		client := memcache.New(serv)
+		globals.MemClients[i] = client
+	}
+	log.Println("clients:", spew.Sdump(globals.MemClients))
 	globals.DbConfString = fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		conf.Db.Host, conf.Db.Port, conf.Db.User, conf.Db.Password, conf.Db.Dbname, conf.Db.Sslmode,

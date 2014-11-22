@@ -246,14 +246,26 @@ func checkAndGetUser(req *http.Request) (string, error) {
 
 	// TODO: move to func
 	key := "x|session_" + sid
-	it, err := globals.MemClient.Get(key)
-	if err != nil {
-		if err == memcache.ErrCacheMiss {
-			log.Println("user session not found for id =", sid)
-			return "", ErrNotFound
+
+	notFound := true
+	var it *memcache.Item
+	for _, client := range globals.MemClients {
+		log.Println("client", spew.Sdump(client), "get", key)
+		it, err = client.Get(key)
+		if err != nil {
+			if err == memcache.ErrCacheMiss {
+				log.Println("user session not found for id =", sid)
+				continue
+				//return "", ErrNotFound
+			}
+			// check other errors
+			return "", err
 		}
-		// check other errors
-		return "", err
+		notFound = false
+		break
+	}
+	if notFound {
+		return "", ErrNotFound
 	}
 
 	var id_str string
