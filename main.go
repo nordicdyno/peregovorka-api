@@ -220,7 +220,7 @@ func (h appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func setCommonHeaders(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Origin", "http://www.sports.ru")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token")
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
