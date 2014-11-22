@@ -1,8 +1,9 @@
 package main
+
 import (
 	"log"
-	"time"
 	"sort"
+	"time"
 
 	"github.com/davecgh/go-spew/spew"
 	mgo "gopkg.in/mgo.v2"
@@ -55,7 +56,7 @@ func mongoSendMessage(roomid string, message *Message) error {
 	log.Println("room selector: ", roomSelector)
 	// get Room object here
 	baseRoom := RoomData{}
-	err := queryMongoCollectionOne("rooms", roomSelector, &baseRoom)
+	err := queryMongoCollectionOne("rooms", roomSelector, nil, &baseRoom)
 	if err != nil {
 		return err
 	}
@@ -116,9 +117,9 @@ func mongoCreateRoom(ownerid string, guests []string) (string, error) {
 
 	roomid := makeRoomId(ownerid, guestIds, shaLength)
 
-	updateMap := make(map[string]interface {})
+	updateMap := make(map[string]interface{})
 	// TODO: add loop for multy chats
-	updateMap["id"] =     roomid
+	updateMap["id"] = roomid
 	updateMap["ownerid"] = ownerid
 	updateMap["guests."+guid] = true
 	roomBson := bson.M{
@@ -177,8 +178,8 @@ func mongoAddMessageToHouseRoom(uid string, roomid string, message *Message) err
 	houseSelector := bson.M{"uid": uid}
 	msgUpdateBson := bson.M{
 		"$set": bson.M{
-			"uid": uid,
-			"rooms."+roomid: bson.M{"last_message":  message},
+			"uid":             uid,
+			"rooms." + roomid: bson.M{"last_message": message},
 		},
 	}
 	log.Println("add message data to house: ", msgUpdateBson)
@@ -189,7 +190,6 @@ func mongoAddMessageToHouseRoom(uid string, roomid string, message *Message) err
 	}
 	return nil
 }
-
 
 func mongoAddUser(user *UserData) error {
 	selector := bson.M{"uid": user.Uid}
@@ -202,7 +202,6 @@ func mongoAddUser(user *UserData) error {
 	log.Println("result:", spew.Sdump(res))
 	return nil
 }
-
 
 func queryMongoCollectionAll(name string, query interface{}, result interface{}) error {
 	session, err := mgo.DialWithInfo(globals.MongoDialInfo)
@@ -217,7 +216,7 @@ func queryMongoCollectionAll(name string, query interface{}, result interface{})
 	return collection.Find(query).All(result)
 }
 
-func queryMongoCollectionOne(name string, query interface{}, result interface{}) error {
+func queryMongoCollectionOne(name string, criteria interface{}, projection interface{}, result interface{}) error {
 	session, err := mgo.DialWithInfo(globals.MongoDialInfo)
 	if err != nil {
 		return err
@@ -226,8 +225,13 @@ func queryMongoCollectionOne(name string, query interface{}, result interface{})
 
 	session.SetMode(mgo.Monotonic, true)
 	collection := session.DB(conf.Mongo.Database).C(name)
+	query := collection.Find(criteria)
+	if projection != nil {
+		log.Println("Add projection in mongo query")
+		query = query.Select(projection)
+	}
 	log.Println("before find")
-	return collection.Find(query).One(result)
+	return query.One(result)
 }
 
 func upsertMongoCollection(name string, selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error) {

@@ -24,8 +24,9 @@ var (
 	ErrNotFound = errors.New("handlers: data not found")
 )
 
-func historyRoomsHandler(w http.ResponseWriter, req *http.Request) {
-	log.Println("call historyRoomsHandler")
+func listHistoryRoomsHandler(w http.ResponseWriter, req *http.Request) {
+	log.Println("call listHistoryRoomsHandler")
+	roomid := req.PostFormValue("roomid")
 	uid, err := checkAndGetUser(req)
 	if err != nil {
 		if err == mgo.ErrNotFound {
@@ -35,7 +36,29 @@ func historyRoomsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		panic(err)
 	}
-	_ = uid
+
+	history := RoomData{
+		// init Guests & Messages
+	}
+	selector := bson.M{"id": roomid, "ownerid": uid}
+	var projection interface {}
+	projection = bson.M{"messages": bson.M{"$slice": -20}}
+	log.Println("selector: ", selector)
+	err = queryMongoCollectionOne("rooms", selector, projection, &history)
+	if err != nil {
+		if err == mgo.ErrNotFound {
+			log.Println("Not found history for room =", roomid,"& uid =", uid)
+			w.Header().Set("Content-Type", "application/json;charset=utf-8")
+			io.WriteString(w, "{}") // 404 ?
+			return
+		}
+		panic(err.Error() + ": " + string(debug.Stack()))
+	}
+	log.Println("room history: ", spew.Sdump(&history))
+
+	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	jEnc := json.NewEncoder(w)
+	jEnc.Encode(&history)
 }
 
 func sendRoomHandler(w http.ResponseWriter, req *http.Request) {
@@ -74,17 +97,22 @@ func sendRoomHandler(w http.ResponseWriter, req *http.Request) {
 
 func listRoomsHandler(w http.ResponseWriter, req *http.Request) {
 	log.Println("call listRoomsHandler")
-	uid := req.PostFormValue("uid")
+	uid, err := checkAndGetUser(req)
+	if err != nil {
+		if err == mgo.ErrNotFound {
+			http.NotFound(w, req)
+			return
+		}
+		panic(err)
+	}
 
-	//type Rooms []*RoomDataDesc
-	//list := make([]*RoomDataDesc, 100)
 	house := HouseData{
 		Rooms: make(map[string]*RoomDataDesc),
 	}
 	selector := bson.M{"uid": uid}
 	log.Println("selector: ", selector)
 	//err := queryMongoCollectionOne("house", selector, &house)
-	err := queryMongoCollectionOne("houses", selector, &house)
+	err = queryMongoCollectionOne("houses", selector, nil, &house)
 	if err != nil {
 		if err == mgo.ErrNotFound {
 			log.Println("Not found house for uid=", uid)

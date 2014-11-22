@@ -169,7 +169,7 @@ func main() {
 	r.HandleFunc("/rooms/create", createRoomHandler)
 	// in progress
 	r.HandleFunc("/rooms/send",   sendRoomHandler)
-	r.HandleFunc("/rooms/history", historyRoomsHandler)
+	r.HandleFunc("/rooms/history", listHistoryRoomsHandler)
 
 	// other
 	r.HandleFunc("/page/{name}", homeHandler)
