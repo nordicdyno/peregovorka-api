@@ -116,6 +116,21 @@ func mongoCreateRoom(ownerid string, guests []string) (string, error) {
 	guestIds := []string{guid}
 
 	roomid := makeRoomId(ownerid, guestIds, shaLength)
+/*
+	type RoomDataDesc struct {
+		Id          string
+		OwnerId     string
+		LastMessage *Message
+		LastUser    *UserData
+		Unreaded    int32
+	}
+*/
+	// FIXME : temporary hack?
+	user := UserData{}
+	err := queryMongoCollectionOne("users", bson.M{"uid": guid}, nil, &user)
+	if err != nil {
+		return "", err
+	}
 
 	updateMap := make(map[string]interface{})
 	// TODO: add loop for multy chats
@@ -125,6 +140,7 @@ func mongoCreateRoom(ownerid string, guests []string) (string, error) {
 	roomBson := bson.M{
 		"$set": bson.M(updateMap),
 	}
+	updateMap["lastuser"] = &user
 
 	selector := bson.M{"id": roomid}
 	log.Println("rooms selector: ", selector)
@@ -141,7 +157,7 @@ func mongoCreateRoom(ownerid string, guests []string) (string, error) {
 	roomSubKey := "rooms." + roomid
 	houseBson := bson.M{
 		"$set": bson.M{
-			roomSubKey: bson.M{"id": roomid},
+			roomSubKey: bson.M{"id": roomid, "lastuser": &user},
 		},
 	}
 	log.Println("mongoCreateRoom houses selector: ", houseSelector)
