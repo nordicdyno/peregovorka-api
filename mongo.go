@@ -48,7 +48,22 @@ type Message struct {
 	Content  string
 	AuthorId string
 	Readed   bool
+	IsMine   bool
 }
+
+func (d *Message) Copy() *Message {
+	m := Message{
+		Id: d.Id,
+		Dt: d.Dt,
+		Content: d.Content,
+		AuthorId: d.AuthorId,
+		Readed: d.Readed,
+		IsMine: d.IsMine,
+	}
+	//m = d
+	return &m
+}
+
 
 func mongoSendMessage(roomid string, message *Message) error {
 	// TODO: check room existence
@@ -173,20 +188,27 @@ func mongoCreateRoom(ownerid string, guests []string) (string, error) {
 
 func mongoAddMessageToRoom(uid string, roomid string, message *Message) error {
 	roomSelector := bson.M{"id": roomid}
+
+	messageCopy := message.Copy()
+	if message.AuthorId == uid {
+		messageCopy.IsMine = true
+	}
 	msgUpdateBson := bson.M{
 		"$push": bson.M{
 			"messages": bson.M{
-				"$each":  []*Message{message},
+				"$each":  []*Message{messageCopy},
 				"$slice": -500,
 			},
 		},
 	}
 	log.Println("add message to room: ", roomid, "data:", spew.Sdump(msgUpdateBson))
 
-	_, err := upsertMongoCollection("rooms", roomSelector, msgUpdateBson)
+	ret, err := upsertMongoCollection("rooms", roomSelector, msgUpdateBson)
 	if err != nil {
 		return err
 	}
+	log.Println("mongoAddMessageToRoom: upsertMongoCollection(rooms) ret => ", spew.Sdump(ret))
+
 	return nil
 }
 
