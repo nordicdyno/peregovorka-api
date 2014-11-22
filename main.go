@@ -49,7 +49,7 @@ type Config struct {
 }
 
 type MemcacheConfig struct {
-	ConnStr string `toml:"conn"`
+	Servers []string
 	Attemps int32
 }
 
@@ -106,7 +106,7 @@ func init() {
 		Username: conf.Mongo.Username,
 		Password: conf.Mongo.Password,
 	}
-	globals.MemClient = memcache.New(conf.Memcache.ConnStr)
+	globals.MemClient = memcache.New(conf.Memcache.Servers...)
 	globals.DbConfString = fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		conf.Db.Host, conf.Db.Port, conf.Db.User, conf.Db.Password, conf.Db.Dbname, conf.Db.Sslmode,
