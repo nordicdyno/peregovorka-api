@@ -184,8 +184,8 @@ func main() {
 	// other
 	r.HandleFunc("/page/{name}", homeHandler)
 
-	r.HandleFunc("/users/create_debug", createUserHandlerDebug)
-	r.HandleFunc("/rooms/create_debug", createRoomHandlerDebug)
+	//r.HandleFunc("/users/create_debug", createUserHandlerDebug)
+	//r.HandleFunc("/rooms/create_debug", createRoomHandlerDebug)
 
 	// r.HandleFunc("/rooms/send/debug", sendRoomHandlerDebug)
 	// r.HandleFunc("/rooms/history", historyRoomsHandler)

@@ -85,7 +85,7 @@ func mongoSendMessage(roomid string, message *Message) error {
 		sort.Strings(keys)
 		allRoomIds[guestId] = keys
 	}
-	log.Println("All rooms", spew.Sdump(allRoomIds))
+	log.Println("mongoSendMessage: All rooms", spew.Sdump(allRoomIds))
 
 	for ownerid, guests := range allRoomIds {
 		id := makeRoomId(ownerid, guests, shaLength)
@@ -106,7 +106,7 @@ func mongoSendMessage(roomid string, message *Message) error {
 	// TODO: concurently update all rooms
 	// TODO: if any update failed will do anything (requeue, message queues, etc)
 
-	log.Println("update ok:")
+	log.Println("mongoSendMessage: update ok")
 	return nil
 }
 
@@ -114,7 +114,7 @@ func mongoCreateRoom(ownerid string, guests []string) (string, error) {
 	// FIXME: temporary hack
 	guid := guests[0]
 	guestIds := []string{guid}
-
+	log.Println("call mongoCreateRoom()")
 	roomid := makeRoomId(ownerid, guestIds, shaLength)
 /*
 	type RoomDataDesc struct {
@@ -181,7 +181,7 @@ func mongoAddMessageToRoom(uid string, roomid string, message *Message) error {
 			},
 		},
 	}
-	log.Println("add message data: ", msgUpdateBson)
+	log.Println("add message to room: ", roomid, "data:", spew.Sdump(msgUpdateBson))
 
 	_, err := upsertMongoCollection("rooms", roomSelector, msgUpdateBson)
 	if err != nil {
@@ -198,7 +198,7 @@ func mongoAddMessageToHouseRoom(uid string, roomid string, message *Message) err
 			"rooms." + roomid: bson.M{"last_message": message},
 		},
 	}
-	log.Println("add message data to house: ", msgUpdateBson)
+	log.Println("add message data to house: ", spew.Sdump(msgUpdateBson))
 
 	_, err := upsertMongoCollection("houses", houseSelector, msgUpdateBson)
 	if err != nil {

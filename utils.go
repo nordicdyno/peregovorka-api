@@ -4,6 +4,9 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io"
+
+	//"github.com/davecgh/go-spew/spew"
+	//"log"
 )
 
 func makeRoomId(owner string, guests []string, size int) string {
@@ -14,7 +17,8 @@ func makeRoomId(owner string, guests []string, size int) string {
 	}
 	s := fmt.Sprintf("%x", h.Sum(nil))
 	if size > 0 && len(s) > size {
-		return s[:size]
+		s = s[:size]
 	}
+	//log.Println(owner, "+", spew.Sdump(guests), "=>", s)
 	return s
 }

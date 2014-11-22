@@ -38,16 +38,16 @@ func listHistoryRoomsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	history := RoomData{
-		// init Guests & Messages
+	// init Guests & Messages
 	}
 	selector := bson.M{"id": roomid, "ownerid": uid}
-	var projection interface {}
+	var projection interface{}
 	projection = bson.M{"messages": bson.M{"$slice": -20}}
 	log.Println("selector: ", selector)
 	err = queryMongoCollectionOne("rooms", selector, projection, &history)
 	if err != nil {
 		if err == mgo.ErrNotFound {
-			log.Println("Not found history for room =", roomid,"& uid =", uid)
+			log.Println("Not found history for room =", roomid, "& uid =", uid)
 			w.Header().Set("Content-Type", "application/json;charset=utf-8")
 			io.WriteString(w, "{}") // 404 ?
 			return
@@ -149,7 +149,7 @@ func createRoomHandler(w http.ResponseWriter, req *http.Request) {
 	// FIXME: check if guid exists
 
 	guestIds := []string{guid}
-
+	log.Println(" **** before mongoCreateRoom **** ")
 	roomid, err := mongoCreateRoom(uid, guestIds)
 	if err != nil {
 		panic(err)
